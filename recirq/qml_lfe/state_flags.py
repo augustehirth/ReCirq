@@ -12,28 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Executable flags used for learn_dynamics_*** modules."""
+"""Executable flags used for learn_states_*** modules."""
 
 from absl import flags
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer("n", None, "System size.")
-flags.DEFINE_integer("depth", None, "Circuit depth (block-wise).")
+flags.DEFINE_integer("n", None, "Number of qubits to use.")
 flags.DEFINE_integer(
-    "n_data",
-    20,
-    "Number of circuits generated for each class (total circuits == 2 * n_data).",
+    "n_paulis", 20, "Number of random Pauli string circuits to generate."
+)
+
+# Note this experiment is far less efficient than learn_dynamics_***.
+# Here batch_size shots are drawn via run_sweep until n_shots measurements
+# are reached for each circuit.
+flags.DEFINE_integer(
+    "n_sweeps",
+    500,
+    "Number of sweeps to send over the wire per circuit (value does not affect results).",
 )
 
 flags.DEFINE_integer(
-    "batch_size",
-    5,
-    "Number of circuits to send over the wire per batch (value does not affect results).",
-)
-
-flags.DEFINE_integer(
-    "n_shots", 2000, "Number of measurements to draw from each individual circuit."
+    "n_shots", 500, "Number of measurements to draw from each individual circuit."
 )
 
 flags.DEFINE_string(
