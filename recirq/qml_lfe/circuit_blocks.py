@@ -13,13 +13,14 @@
 # limitations under the License.
 
 """Sycamore native circuit building blocks."""
-from typing import List, Callable
+from typing import Callable, Dict, List
 from numbers import Number
 
 import os
 import cirq
 import cirq_google
 import functools
+import numpy as np
 
 
 @functools.lru_cache(maxsize=128)
@@ -169,3 +170,72 @@ def swap_block(qubits: List[cirq.Qid]) -> List[cirq.Operation]:
         {cirq.GridQubit(0, 0): qubits[0], cirq.GridQubit(0, 1): qubits[1]}
     )
     return mapped_circuit.all_operations()
+
+
+def inv_z_basis_gate(pauli: str) -> cirq.Gate:
+    """Returns inverse Z basis transformation ops for a given Pauli.
+
+    Args:
+        pauli: Python str representing a single pauli.
+
+    Returns:
+        Corresponding `cirq.Gate` to do the inverse basis conversion.
+    """
+    if pauli == "I" or pauli == "Z":
+        return cirq.I
+    if pauli == "X":
+        return cirq.H
+    if pauli == "Y":
+        # S^dag H to get to computational, H S to go back.
+        return cirq.PhasedXZGate(
+            axis_phase_exponent=-0.5, x_exponent=0.5, z_exponent=-0.5
+        )
+    raise ValueError("Invalid Pauli.")
+
+
+def create_randomized_sweeps(
+    hidden_p: str,
+    symbols: Dict[str, int],
+    n_params: int,
+    rand_state: np.random.RandomState,
+) -> List[Dict[str, int]]:
+    """Generate sweeps to help prepare \rho = 2^(-n) (I + \alpha P) states.
+
+    See section A.2.a (https://arxiv.org/pdf/2112.00778.pdf) more details.
+
+    Args:
+        hidden_p: Pauli operator in (I + \alpha P)
+        symbols: Symbols to generate values for to prepare \rho.
+        n_params: Number of unique parameter configurations (sweeps)
+            to generate for the given `symbols`.
+        rand_state: np.random.RandomState source of randomness.
+
+    Returns:
+        List of sweeps, that when placed in a circuit will realize
+        \rho.
+    """
+
+    last_i = 0
+    for i, pauli in enumerate(hidden_p):
+        if pauli != "I":
+            last_i = i
+
+    sign_p = rand_state.choice([1, -1])
+    all_sweeps = []
+    for _ in range(n_params):
+        current_sweep = dict()
+        for twocopy in [0, 1]:
+            parity = sign_p * rand_state.choice([1, -1], p=[0.95, 0.05])
+            for i, pauli in enumerate(hidden_p):
+                current_symbol = symbols[2 * i + twocopy]
+                current_sweep[current_symbol] = rand_state.choice([0, 1])
+                if pauli != "I":
+                    if last_i == i:
+                        v = 1 if parity == -1 else 0
+                        current_sweep[current_symbol] = v
+                    elif current_sweep[current_symbol] == 1:
+                        parity *= -1
+
+        all_sweeps.append(current_sweep)
+
+    return all_sweeps
