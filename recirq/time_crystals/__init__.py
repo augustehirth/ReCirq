@@ -12,4 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from recirq.mbl_dtc.dtc_utilities import *
+from recirq.time_crystals.dtctask import *
+from recirq.time_crystals.dtc_utilities import *

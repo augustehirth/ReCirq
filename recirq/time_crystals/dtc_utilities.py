@@ -3,6 +3,8 @@
 from typing import Sequence, Tuple, List
 
 import cirq
+import functools
+from recirq.time_crystals.dtctask import DTCTask
 import numpy as np
 import sympy as sp
 
@@ -15,10 +17,10 @@ def symbolic_dtc_circuit_list(
 
     """ Create a list of symbolically parameterized dtc circuits, with increasing cycles
     Args: 
-    - qubits: an ordered sequence of the available qubits, which are connected in a chain
-    - cycles: the maximum number of cycles, and the total number of resulting circuits
+        qubits: an ordered sequence of the available qubits, which are connected in a chain
+        cycles: the maximum number of cycles, and the total number of resulting circuits
     Returns: 
-    - list of circuits with `0, 1, 2, ... cycles` many cycles
+        list of circuits with `0, 1, 2, ... cycles` many cycles
     """
      
     num_qubits = len(qubits)
@@ -27,15 +29,15 @@ def symbolic_dtc_circuit_list(
     g_value = sp.Symbol('g')
 
     # Symbols for random variance and initial state, one per qubit
-    local_fields = sp.symbols('local_field:' + str(num_qubits))
-    initial_state = sp.symbols('initial_state:' + str(num_qubits))
+    local_fields = sp.symbols('local_field_:' + str(num_qubits))
+    initial_state = sp.symbols('initial_state_:' + str(num_qubits))
 
     # Symbols used for PhasedFsimGate, one for every qubit pair in the chain
-    thetas = sp.symbols('theta:' + str(num_qubits - 1))
-    zetas = sp.symbols('zeta:' + str(num_qubits - 1))
-    chis = sp.symbols('chi:' + str(num_qubits - 1))
-    gammas = sp.symbols('gamma:' + str(num_qubits - 1))
-    phis = sp.symbols('phi:' + str(num_qubits - 1))
+    thetas = sp.symbols('theta_:' + str(num_qubits - 1))
+    zetas = sp.symbols('zeta_:' + str(num_qubits - 1))
+    chis = sp.symbols('chi_:' + str(num_qubits - 1))
+    gammas = sp.symbols('gamma_:' + str(num_qubits - 1))
+    phis = sp.symbols('phi_:' + str(num_qubits - 1))
 
     # Initial moment of Y gates, conditioned on initial state
     initial_operations = cirq.Moment([cirq.Y(qubit) ** initial_state[index] for index, qubit in enumerate(qubits)])
@@ -89,63 +91,15 @@ def symbolic_dtc_circuit_list(
 
     return circuit_list
 
-def dtc_param_resolver_sweep(gs: Sequence[float] = None,
-                       initial_states: Sequence[Sequence[int]] = None, 
-                       local_fields: Sequence[Sequence[float]] = None, 
-                       thetas: Sequence[Sequence[float]] = None, 
-                       zetas: Sequence[Sequence[float]] = None, 
-                       chis: Sequence[Sequence[float]] = None, 
-                       gammas: Sequence[Sequence[float]] = None, 
-                       phis: Sequence[Sequence[float]] = None,
-                       ) -> cirq.Sweepable:
-    """ Create a `cirq.Sweepable` sequence of `cirq.ParamResolver`s, for the parameters of dtc circuits
-    Args: 
-    - initial_states: list of initial states (list of [0,1] ints) for the circuit
-    - local_fields: list of local fields (list of floats) that model random fluctuations
-    - thetas: list of list of thetas for each two-qubit fsim gate in the chain
-    - zetas: list of list of zetas for each two-qubit fsim gate in the chain
-    - chis: list of list of chis for each two-qubit fsim gate in the chain
-    - gammas: list of list of gammas for each two-qubit fsim gate in the chain
-    - phis: list of list of phis for each two-qubit fsim gate in the chain
-    Returns: 
-    - A `cirq.Sweepable` which zips together param resolvers for the options for each individual parameter, into a sequence of parameter sweeps. 
-    """
-
-    components = []
-
-    # gs are the only parameter that is not qubit-dependent
-    if gs is not None and len(gs):
-        components.append(cirq.Points('g', gs))
-
-    # The remaining parameters have a separate symbol for each qubit
-    labels = ['initial_state', 'local_field', 'theta', 'zeta', 'chi', 'gamma', 'phi']
-    parameters = [initial_states, local_fields, thetas, zetas, chis, gammas, phis]
-
-    for label, parameter in zip(labels, parameters): 
-        sweep = []
-        # if the parameter is not supplied, don't add it to the param resolvers
-        if parameter is None: continue
-
-        # for each set of options for the parameter
-        for options in parameter: 
-            # create a dictionary/param resolver to match each option in the parameter to each symbol name, for each qubit index
-            component = {label + str(qubit_index):option for qubit_index, option in enumerate(options)}
-            sweep.append(cirq.ParamResolver(component))
-
-        # include sweep over options (list of param resolvers) as a component
-        components.append(cirq.ListSweep(sweep))
-
-    # return zip over all separate list sweeps of each parameter's options    
-    return cirq.Zip(*components)
-
 def simulate_dtc_circuit_list(circuit_list: Sequence[cirq.Circuit], param_resolver: cirq.ParamResolver, qubit_order: Sequence[cirq.Qid]) -> np.ndarray: 
     """ Simulate a dtc circuit list for a particular param_resolver
+        Depends on the fact that simulating the last circuit in the list also simulates each previous circuit along the way
     Args: 
-    - circuit_list: a DTC circuit list; each element is a circuit with increasingly many cycles
-    - param_resolver: a `cirq.ParamResolver`
-    - qubit_order: an ordered sequence of qubits defining their order in a chain
+        circuit_list: a DTC circuit list; each element is a circuit with increasingly many cycles
+        param_resolver: a `cirq.ParamResolver`
+        qubit_order: an ordered sequence of qubits defining their order in a chain
     Returns: 
-    - a `np.ndarray` of shape (number of cycles, 2**number of qubits) representing the probability of measuring each bit string, for each circuit in the list
+        a `np.ndarray` of shape (number of cycles, 2**number of qubits) representing the probability of measuring each bit string, for each circuit in the list
     """
 
     # prepare simulator
@@ -166,31 +120,31 @@ def simulate_dtc_circuit_list(circuit_list: Sequence[cirq.Circuit], param_resolv
 
     return np.asarray(probabilities)
 
-def simulate_dtc_circuit_list_sweep(circuit_list: Sequence[cirq.Circuit], param_resolvers: Sequence[cirq.ParamResolver], qubit_order: Sequence[cirq.Qid]) -> List[Tuple[cirq.ParamResolver, np.ndarray]]:
-  """ Simulate a dtc circuit list over a sweep of param_resolvers
-  Args: 
-  - circuit_list: a DTC circuit list; each element is a circuit with increasingly many cycles
-  - param_resolvers: a list of `cirq.ParamResolver`s to sweep over
-  - qubit_order: an ordered sequence of qubits defining their order in a chain
-  Generates, for each param_resolver: 
-  - `np.ndarray`s of shape (number of cycles, 2**number of qubits) representing the probability of measuring each bit string, for each circuit in the list
-  """
+def simulate_dtc_circuit_list_sweep(circuit_list: Sequence[cirq.Circuit], param_resolvers: Sequence[cirq.ParamResolver], qubit_order: Sequence[cirq.Qid]):
+    """ Simulate a dtc circuit list over a sweep of param_resolvers
+    Args: 
+        circuit_list: a DTC circuit list; each element is a circuit with increasingly many cycles
+        param_resolvers: a list of `cirq.ParamResolver`s to sweep over
+        qubit_order: an ordered sequence of qubits defining their order in a chain
+    Yields, for each param_resolver: 
+        `np.ndarray`s of shape (number of cycles, 2**number of qubits) representing the probability of measuring each bit string, for each circuit in the list
+    """
 
-  # iterate over param resolvers and simulate for each
-  for param_resolver in param_resolvers:
-    probabilities = simulate_dtc_circuit_list(circuit_list, param_resolver, qubit_order)
-    yield probabilities
+    # iterate over param resolvers and simulate for each
+    for param_resolver in param_resolvers:
+      probabilities = simulate_dtc_circuit_list(circuit_list, param_resolver, qubit_order)
+      yield probabilities
 
 def get_polarizations(probabilities: np.ndarray, num_qubits: int, cycles_axis: int = -2, probabilities_axis: int = -1, initial_states: np.ndarray = None) -> np.ndarray: 
     """get polarizations (likelihood of zero) from matrix of probabilities
     Args: 
-    - probabilities: `np.ndarray` of shape (:, cycles, probabilities) representing probability to measure each bit string
-    - num_qubits: the number of qubits in the circuit the probabilities were generated from
-    - cycles_axis: the axis that represents the dtc cycles (if not in -2 indexed axis)
-    - probabilities_axis: the axis that represents the probabilities for each bit string (if not in -1 indexed axis)
-    - initial_state: `np.ndarray` of shape (:, qubits) representing the initial state for each dtc circuit list
+        probabilities: `np.ndarray` of shape (:, cycles, probabilities) representing probability to measure each bit string
+        num_qubits: the number of qubits in the circuit the probabilities were generated from
+        cycles_axis: the axis that represents the dtc cycles (if not in -2 indexed axis)
+        probabilities_axis: the axis that represents the probabilities for each bit string (if not in -1 indexed axis)
+        initial_states: `np.ndarray` of shape (:, qubits) representing the initial state for each dtc circuit list
     Returns: 
-    - `np.ndarray` of shape (:, cycles, qubits) that represents each qubit's polarization
+        `np.ndarray` of shape (:, cycles, qubits) that represents each qubit's polarization
     """
 
     # prepare list of polarizations for each qubit
@@ -210,22 +164,41 @@ def get_polarizations(probabilities: np.ndarray, num_qubits: int, cycles_axis: i
     # flip polarizations according to the associated initial_state, if provided
     # this means that the polarization of a qubit is relative to it's initial state
     if initial_states is not None:
-        initial_states = 1 - 2.0 * np.expand_dims(initial_states, axis=cycles_axis)
+        initial_states = 1 - 2.0 * initial_states
         polarizations = initial_states * polarizations
 
     return polarizations
 
-def filter_if_latex_not_available(label: str) -> str:
-    """ return if latex is available in path, and filter label if it isn't
+
+def simulate_for_polarizations(dtctask: DTCTask, circuit_list: Sequence[cirq.Circuit], autocorrelate: bool = True, take_abs: bool = False):
+    
+    # create param resolver sweep
+    param_resolvers = dtctask.param_resolvers()
+
+    # prepare simulation generator
+    probabilities_generator = simulate_dtc_circuit_list_sweep(circuit_list, param_resolvers, dtctask.qubits)
+
+    # map get_polarizations over probabilities_generator
+    polarizations_generator = map(lambda probabilities, initial_state:
+                                get_polarizations(probabilities, num_qubits=len(dtctask.qubits), cycles_axis=0, probabilities_axis=1, initial_states=(initial_state if autocorrelate else None)), 
+                                 probabilities_generator, dtctask.initial_states)
+
+    # take sum of (absolute value of) polarizations over different disorder instances
+    polarization_sum = functools.reduce(lambda x,y: x+(np.abs(y) if take_abs else y), polarizations_generator, np.zeros((len(circuit_list), len(dtctask.qubits))))
+
+    # get average over disorder instances
+    disorder_averaged_polarizations = polarization_sum / dtctask.disorder_instances
+    
+    return disorder_averaged_polarizations
+
+
+def signal_ratio(zeta_1: np.ndarray, zeta_2: np.ndarray): 
+    ''' calculate signal ratio
     Args: 
-    - label: a tex-formatted string
+        zeta_1: signal (`np.ndarray` of shape (qubits, cycles) to represent polarization over time)
+        zeta 2: signal (`np.ndarray` of shape (qubits, cycles) to represent polarization over time)
     Returns: 
-    - label, but conditionally in plaintext (backslashes removed)
-    """
+        computed ratio signal of zeta_1 and zeta_2 (`np.ndarray` of shape (qubits, cycles) to represent polarization over time)
+    '''
 
-    if shutil.which('latex') is not None:
-        return label
-    else:
-        # only currently used for labels with backslashes, otherwise this would be more comprehensive
-        return label.replace("\\", "")
-
+    return np.abs(zeta_1 - zeta_2)/(np.abs(zeta_1) + np.abs(zeta_2))
