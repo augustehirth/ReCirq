@@ -16,7 +16,7 @@ from typing import Sequence, Tuple, List
 
 import cirq
 import functools
-from recirq.time_crystals.dtctask import DTCTask
+from recirq.time_crystals.dtctask import DTCTask, CompareDTCTask
 import numpy as np
 import sympy as sp
 
@@ -28,13 +28,13 @@ def symbolic_dtc_circuit_list(
         ) -> List[cirq.Circuit]:
 
     """ Create a list of symbolically parameterized dtc circuits, with increasing cycles
-    Args: 
+    Args:
         qubits: an ordered sequence of the available qubits, which are connected in a chain
         cycles: the maximum number of cycles, and the total number of resulting circuits
-    Returns: 
+    Returns:
         list of circuits with `0, 1, 2, ... cycles` many cycles
     """
-     
+
     num_qubits = len(qubits)
 
     # Symbol for g
@@ -54,7 +54,7 @@ def symbolic_dtc_circuit_list(
     # Initial moment of Y gates, conditioned on initial state
     initial_operations = cirq.Moment([cirq.Y(qubit) ** initial_state[index] for index, qubit in enumerate(qubits)])
 
-    # First component of U cycle, a moment of ZX gates. 
+    # First component of U cycle, a moment of ZX gates.
     sequence_operations = []
     for index, qubit in enumerate(qubits):
         sequence_operations.append(cirq.PhasedXZGate(
@@ -74,16 +74,16 @@ def symbolic_dtc_circuit_list(
             previous_qubit, previous_index = qubit, index
             continue
 
-        # Add an fsim gate 
+        # Add an fsim gate
         coupling_gate = cirq.ops.PhasedFSimGate(
-            theta=thetas[previous_index], 
+            theta=thetas[previous_index],
             zeta=zetas[previous_index],
             chi=chis[previous_index],
             gamma=gammas[previous_index],
             phi=phis[previous_index]
         )
         operation_list.append(coupling_gate.on(previous_qubit, qubit))
-        
+
         # Swap the operation lists we're adding to, to avoid two-qubit gate overlap
         previous_qubit, previous_index = qubit, index
         operation_list, other_operation_list = other_operation_list, operation_list
@@ -103,14 +103,14 @@ def symbolic_dtc_circuit_list(
 
     return circuit_list
 
-def simulate_dtc_circuit_list(circuit_list: Sequence[cirq.Circuit], param_resolver: cirq.ParamResolver, qubit_order: Sequence[cirq.Qid]) -> np.ndarray: 
+def simulate_dtc_circuit_list(circuit_list: Sequence[cirq.Circuit], param_resolver: cirq.ParamResolver, qubit_order: Sequence[cirq.Qid]) -> np.ndarray:
     """ Simulate a dtc circuit list for a particular param_resolver
         Depends on the fact that simulating the last circuit in the list also simulates each previous circuit along the way
-    Args: 
+    Args:
         circuit_list: a DTC circuit list; each element is a circuit with increasingly many cycles
         param_resolver: a `cirq.ParamResolver`
         qubit_order: an ordered sequence of qubits defining their order in a chain
-    Returns: 
+    Returns:
         a `np.ndarray` of shape (number of cycles, 2**number of qubits) representing the probability of measuring each bit string, for each circuit in the list
     """
 
@@ -122,7 +122,7 @@ def simulate_dtc_circuit_list(circuit_list: Sequence[cirq.Circuit], param_resolv
 
     # only simulate one circuit, the last one
     circuit = circuit_list[-1]
-    
+
     # use simulate_moment_steps to recover all of the state vectors necessary, while only simulating the circuit list once
     probabilities = []
     for k, step in enumerate(simulator.simulate_moment_steps(circuit=circuit, param_resolver=param_resolver, qubit_order=qubit_order)):
@@ -134,11 +134,11 @@ def simulate_dtc_circuit_list(circuit_list: Sequence[cirq.Circuit], param_resolv
 
 def simulate_dtc_circuit_list_sweep(circuit_list: Sequence[cirq.Circuit], param_resolvers: Sequence[cirq.ParamResolver], qubit_order: Sequence[cirq.Qid]):
     """ Simulate a dtc circuit list over a sweep of param_resolvers
-    Args: 
+    Args:
         circuit_list: a DTC circuit list; each element is a circuit with increasingly many cycles
         param_resolvers: a list of `cirq.ParamResolver`s to sweep over
         qubit_order: an ordered sequence of qubits defining their order in a chain
-    Yields, for each param_resolver: 
+    Yields, for each param_resolver:
         `np.ndarray`s of shape (number of cycles, 2**number of qubits) representing the probability of measuring each bit string, for each circuit in the list
     """
 
@@ -147,15 +147,15 @@ def simulate_dtc_circuit_list_sweep(circuit_list: Sequence[cirq.Circuit], param_
       probabilities = simulate_dtc_circuit_list(circuit_list, param_resolver, qubit_order)
       yield probabilities
 
-def get_polarizations(probabilities: np.ndarray, num_qubits: int, cycles_axis: int = -2, probabilities_axis: int = -1, initial_states: np.ndarray = None) -> np.ndarray: 
+def get_polarizations(probabilities: np.ndarray, num_qubits: int, cycles_axis: int = -2, probabilities_axis: int = -1, initial_states: np.ndarray = None) -> np.ndarray:
     """get polarizations (likelihood of zero) from matrix of probabilities
-    Args: 
+    Args:
         probabilities: `np.ndarray` of shape (:, cycles, probabilities) representing probability to measure each bit string
         num_qubits: the number of qubits in the circuit the probabilities were generated from
         cycles_axis: the axis that represents the dtc cycles (if not in -2 indexed axis)
         probabilities_axis: the axis that represents the probabilities for each bit string (if not in -1 indexed axis)
         initial_states: `np.ndarray` of shape (:, qubits) representing the initial state for each dtc circuit list
-    Returns: 
+    Returns:
         `np.ndarray` of shape (:, cycles, qubits) that represents each qubit's polarization
     """
 
@@ -182,8 +182,29 @@ def get_polarizations(probabilities: np.ndarray, num_qubits: int, cycles_axis: i
     return polarizations
 
 
+def signal_ratio(zeta_1: np.ndarray, zeta_2: np.ndarray):
+    ''' calculate signal ratio
+    Args:
+        zeta_1: signal (`np.ndarray` of shape (qubits, cycles) to represent polarization over time)
+        zeta 2: signal (`np.ndarray` of shape (qubits, cycles) to represent polarization over time)
+    Returns:
+        computed ratio signal of zeta_1 and zeta_2 (`np.ndarray` of shape (qubits, cycles) to represent polarization over time)
+    '''
+
+    return np.abs(zeta_1 - zeta_2)/(np.abs(zeta_1) + np.abs(zeta_2))
+
+
 def simulate_for_polarizations(dtctask: DTCTask, circuit_list: Sequence[cirq.Circuit], autocorrelate: bool = True, take_abs: bool = False):
-    
+    """ simulate and get polarizations for a single DTCTask and circuit list
+    Args:
+        dtctask: a DTCTask noting the parameters to simulate over some number of disorder instances
+        circuit_list: a symbolic dtc circuit list
+        autocorrelate: whether to autocorrelate the polarizations with their respective initial states or not
+        take_abs: whether to take the absolute value of the polarizations or not
+    Returns:
+        simulated polarizations (np.ndarray of shape (num_cycles, num_qubits)) from the experiment, averaged over disorder instances
+    """
+
     # create param resolver sweep
     param_resolvers = dtctask.param_resolvers()
 
@@ -192,7 +213,7 @@ def simulate_for_polarizations(dtctask: DTCTask, circuit_list: Sequence[cirq.Cir
 
     # map get_polarizations over probabilities_generator
     polarizations_generator = map(lambda probabilities, initial_state:
-                                get_polarizations(probabilities, num_qubits=len(dtctask.qubits), cycles_axis=0, probabilities_axis=1, initial_states=(initial_state if autocorrelate else None)), 
+                                get_polarizations(probabilities, num_qubits=len(dtctask.qubits), cycles_axis=0, probabilities_axis=1, initial_states=(initial_state if autocorrelate else None)),
                                  probabilities_generator, dtctask.initial_states)
 
     # take sum of (absolute value of) polarizations over different disorder instances
@@ -200,17 +221,20 @@ def simulate_for_polarizations(dtctask: DTCTask, circuit_list: Sequence[cirq.Cir
 
     # get average over disorder instances
     disorder_averaged_polarizations = polarization_sum / dtctask.disorder_instances
-    
+
     return disorder_averaged_polarizations
 
 
-def signal_ratio(zeta_1: np.ndarray, zeta_2: np.ndarray): 
-    ''' calculate signal ratio
-    Args: 
-        zeta_1: signal (`np.ndarray` of shape (qubits, cycles) to represent polarization over time)
-        zeta 2: signal (`np.ndarray` of shape (qubits, cycles) to represent polarization over time)
-    Returns: 
-        computed ratio signal of zeta_1 and zeta_2 (`np.ndarray` of shape (qubits, cycles) to represent polarization over time)
-    '''
+def run_comparison_experiment(comparedtctask: CompareDTCTask, autocorrelate: bool = True, take_abs: bool = False):
+    """ run comparison experiment from a CompareDTCTask
+    Args:
+        comparedtctask: a CompareDTCTask which notes which dtc arguments to compare, and default arguments
+        autocorrelate: whether to autocorrelate the polarizations with their respective initial states or not
+        take_abs: whether to take the absolute value of the polarizations or not
+    Yields:
+        disorder averaged polarizations, in order of the product of options supplied to comparedtctask, with all other parameters default
+    """
 
-    return np.abs(zeta_1 - zeta_2)/(np.abs(zeta_1) + np.abs(zeta_2))
+    for dtctask in comparedtctask.dtctasks():
+        yield simulate_for_polarizations(dtctask=dtctask, circuit_list=comparedtctask.circuit_list, autocorrelate=autocorrelate, take_abs=take_abs)
+
