@@ -28,17 +28,16 @@ DEFAULT_BASE_DIR = os.path.expanduser(f'~/cirq_results/{EXPERIMENT_NAME}')
                                     registry=recirq.Registry,
                                     frozen=False)
 class CompareDTCTask:
-    """ A dataclass for managing inputs to a comparison Discrete Time Crystal experiment, comparing different options for parameters
+    """ A task for managing inputs to a comparison Discrete Time Crystal experiment, comparing different options for parameters
 
     Attributes
         dataset_id: unique identifier for this dataset
-        qubits: a chain of connected qubits available for the circuit
+        qubits: chain of connected qubits available for the circuit
         cycles: number of DTC cycles to consider for circuits
-        circuit_list: DTC circuit list
+        circuit_list: symbolic DTC circuit list
         disorder_instances: number of disorder instances averaged over
-        options_dict: dict mapping DTCTask attribute names to options for that attribute
-        options_order: sequence of keys in options_dict, defining order of product
-
+        options_dict: dict mapping DTCTask attribute names to options for that attribute, to take a product over
+        options_order: sequence of keys in options_dict, defining order of product over options
     """
 
     # Task parameters
@@ -47,9 +46,10 @@ class CompareDTCTask:
     # experiment parameters
     qubits: Sequence[cirq.Qid]
     cycles: int
-    circuit_list: Sequence[cirq.Circuit]
     disorder_instances: int
+    circuit_list: Sequence[cirq.Circuit]
 
+    # options to take product over
     options_dict: Dict[str, Sequence[np.ndarray]]
     options_order: Sequence[str]
 
@@ -65,11 +65,15 @@ class CompareDTCTask:
 
         self.qubits = qubits
         self.cycles = cycles
-        self.circuit_list = recirq.time_crystals.symbolic_dtc_circuit_list(qubits, cycles)
         self.disorder_instances = disorder_instances
+
+        # create symbolic circuit list from qubits and cycles count
+        self.circuit_list = recirq.time_crystals.symbolic_dtc_circuit_list(qubits, cycles)
 
         self.options_dict = options_dict
         self.options_order = list(self.options_dict.keys()) if options_order is None else options_order
+
+        # check that the input parameters are consistent
         assert set(self.options_order) == set(self.options_dict.keys()), 'options_order and the keys of options_dict are not the same'
         assert not {'initial_states', 'initial_state'} <= self.options_dict.keys(), 'do not supply both initial_states and initial_state'
 
@@ -91,7 +95,9 @@ class CompareDTCTask:
             DTCTasks with parameters taken from self.options_dict
         """
 
+        # take product over elements of options_dict, in the order of options_order
         for components in itertools.product(*(self.options_dict[attribute_name] for attribute_name in self.options_order)):
+            # prepare arguments for DTCTask
             kwargs = dict(zip(self.options_order, components))
             yield DTCTask(qubits=self.qubits, disorder_instances=self.disorder_instances, **kwargs)
 
@@ -100,7 +106,7 @@ class CompareDTCTask:
                                     registry=recirq.Registry,
                                     frozen=False)
 class DTCTask:
-    """ A dataclass for managing inputs to a Discrete Time Crystal experiment, over some number of disorder instances
+    """ A task for managing inputs to a Discrete Time Crystal experiment, over some number of disorder instances
 
     Attributes:
         dataset_id: unique identifier for this dataset
@@ -152,22 +158,6 @@ class DTCTask:
             gammas: Optional[np.ndarray] = None,
             phis: Optional[np.ndarray] = None
             ):
-        """ Generate a DTCTask with default values for any unsupplied parameter
-        Args:
-            qubits: connected chain of qubits
-            disorder_instances: number of different disorder values to average over
-            g: thermalization value g for DTC circuit
-            initial_state: initial states of system for DTC circuit, shape (disorder_instances, num_qubits)
-            local_field: random fluctuations modeled in DTC circuit, shape (num_qubits,). Only local_field or local_fields should be supplied
-            local_fields: random fluctuations modeled in DTC circuit, shape (disorder_instances, num_qubits). Only local_field or local_fields should be supplied
-            thetas: theta parameters for FSim gates in DTC circuit, shape (disorder_instances, num_qubits - 1)
-            zetas: zeta parameters for FSim gates in DTC circuit, shape (disorder_instances, num_qubits - 1)
-            chis: chi parameters for FSim gates in DTC circuit, shape (disorder_instances, num_qubits - 1)
-            gammas: gamma parameters for FSim gates in DTC circuit, shape (disorder_instances, num_qubits - 1)
-            phis: phi parameters for FSim gates in DTC circuit, shape (disorder_instances, num_qubits - 1)
-         Returns:
-            DTCTask with default parameters for the unsupplied arguments
-        """
 
         self.dataset_id = datetime.datetime.utcnow()
 
@@ -183,6 +173,7 @@ class DTCTask:
 
         num_qubits = len(self.qubits)
 
+        # only enable use of initial_state or initial_states
         assert initial_state is None or initial_states is None, 'do not supply both initial_state and initial_states'
         if initial_state is None and initial_states is None:
             self.initial_states = np.random.choice(2, (self.disorder_instances, num_qubits))
@@ -204,9 +195,10 @@ class DTCTask:
             if zero_param is None:
                 zero_params[index] = np.zeros((self.disorder_instances, num_qubits - 1))
             else:
-                assert zero_param.shape == (self.disorder_instances, num_qubits - 1), f'parameter is of shape {zero_param.shape}, not (disorder_instances, num_qubits - 1)'
+                assert zero_param.shape == (self.disorder_instances, num_qubits - 1), f'thetas, zetas or chis is of shape {zero_param.shape}, not (disorder_instances, num_qubits - 1)'
         self.thetas, self.zetas, self.chis = zero_params
 
+        # if gamma or phi is not supplied, generate it from the other such that phis == -2*gammas
         if gammas is None and phis is None:
             self.gammas = -np.random.uniform(0.5*np.pi, 1.5*np.pi, (self.disorder_instances, num_qubits - 1))
             self.phis = -2*self.gammas
@@ -242,7 +234,7 @@ class DTCTask:
 
 
     def param_resolvers(self):
-        """ return sweep over param resolvers for the parameters of this dataclass
+        """ return a sweep over param resolvers for the parameters of this task
         Returns:
             `cirq.Zip` object with self.disorder_instances many `cirq.ParamResolver`s
         """
