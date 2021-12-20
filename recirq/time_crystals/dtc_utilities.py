@@ -52,7 +52,7 @@ def symbolic_dtc_circuit_list(
     # Initial moment of Y gates, conditioned on initial state
     initial_operations = cirq.Moment([cirq.Y(qubit) ** initial_state[index] for index, qubit in enumerate(qubits)])
 
-    # First component of U cycle, a moment of ZX gates.
+    # First component of U cycle, a moment of XZ gates.
     sequence_operations = []
     for index, qubit in enumerate(qubits):
         sequence_operations.append(cirq.PhasedXZGate(
@@ -82,7 +82,7 @@ def symbolic_dtc_circuit_list(
         )
         operation_list.append(coupling_gate.on(previous_qubit, qubit))
 
-        # Swap the operation lists we're adding to, to avoid two-qubit gate overlap
+        # Swap the operation lists, to avoid two-qubit gate overlap
         previous_qubit, previous_index = qubit, index
         operation_list, other_operation_list = other_operation_list, operation_list
 
