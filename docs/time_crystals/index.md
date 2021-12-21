@@ -8,8 +8,8 @@ The Many Body Local Discrete Time Crystal circuit list presented in the paper an
 
 ## Table of Contents
 
-* The [Time Crystal Circuit Generation](./time_crystal_circuit_generation) notebook covers the provided function `recirq.time_crystals.symbolic_dtc_circuit_list()`, which creates a list of symbolic time crystal circuits with increasingly many $U$-cycles. This circuit list is used in each of the experiments to model crystalline behavior over time.
+* The [Time Crystal Circuit Generation](time_crystal_circuit_generation.ipynb) notebook covers the provided function `recirq.time_crystals.symbolic_dtc_circuit_list()`, which creates a list of symbolic time crystal circuits with increasingly many $U$-cycles. This circuit list is used in each of the experiments to model crystalline behavior over time.
 
-* The [Time Crystal Data Collection](./time_crystal_data_collection) notebook details each of the five experiments necessary to generate Figures 2d through 3d of [the paper](https://arxiv.org/abs/2107.13571), including the parameter options to be compared, the methodology for doing so, and some of the data postprocessing.
+* The [Time Crystal Data Collection](time_crystal_data_collection.ipynb) notebook details each of the five experiments necessary to generate Figures 2d through 3d of [the paper](https://arxiv.org/abs/2107.13571), including the parameter options to be compared, the methodology for doing so, and some of the data postprocessing.
 
-* The [Time Crystal Data Analysis](./time_crystal_data_analysis) notebook primarily demonstrates use of the collected data to generate the figures of the paper. It also discusses some of the conclusions that can be drawn about the results, and how they support the existence of time-crystalline behavior.
+* The [Time Crystal Data Analysis](time_crystal_data_analysis.ipynb) notebook primarily demonstrates use of the collected data to generate the figures of the paper. It also discusses some of the conclusions that can be drawn about the results, and how they support the existence of time-crystalline behavior.
